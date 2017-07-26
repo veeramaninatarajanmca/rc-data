@@ -34,10 +34,10 @@ import requests
 import socket
 
 
-class Story(namedtuple('StoryBase', 'url content highlights')):
+class Story(namedtuple('StoryBase', 'url content highlights title')):
 
   def ToString(self):
-    return self.content + ''.join([
+    return self.title + '\n' + self.content + ''.join([
         '\n\n@highlight\n\n' + highlight
         for highlight in
         self.highlights])
@@ -65,10 +65,8 @@ class QuestionContext(
 
 def ReadUrls(filename):
   """Reads a list of URLs.
-
   Args:
     filename: The filename containing the URLs.
-
   Returns:
     A list of URLs.
   """
@@ -79,12 +77,9 @@ def ReadUrls(filename):
 
 def ReadMultipleUrls(filename):
   """Reads a list of URL lists.
-
   Each line in the filename should contain a list of URLs separated by comma.
-
   Args:
     filename: The filename containing the URLs.
-
   Returns:
     A list of list of URLs.
   """
@@ -95,7 +90,6 @@ def ReadMultipleUrls(filename):
 
 def WriteUrls(filename, urls):
   """Writes a list of URLs to a file.
-
   Args:
     filename: The filename to the file where the URLs should be written.
     urls: The list of URLs to write.
@@ -107,10 +101,8 @@ def WriteUrls(filename, urls):
 
 def Hashhex(s):
   """Returns a heximal formated SHA1 hash of the input string.
-
   Args:
     s: The string to hash.
-
   Returns:
     A heximal formatted hash of the input string.
   """
@@ -122,11 +114,9 @@ def Hashhex(s):
 
 def ReadDownloadedUrl(url, corpus):
   """Reads a downloaded URL from disk.
-
   Args:
     url: The URL to read.
     corpus: The corpus the URL belongs to.
-
   Returns:
     The content of the URL.
   """
@@ -143,14 +133,11 @@ wayback_pattern = re.compile(r'web/([^/]*)/')
 
 def WaybackUrl(urls, max_attempts=6):
   """Retrieves the URL for the latest historic copy using Wayback Machine.
-
   Args:
     urls: The URL for a specific page (canonical URL + forwarding URL's).
     max_attempts: The maximum attempts at requesting the URL.
-
   Returns:
     The URL or None if no copy is stored for the URL.
-
   Raises:
     RuntimeError: Failed to retrieve the URL.
   """
@@ -198,13 +185,11 @@ def WaybackUrl(urls, max_attempts=6):
 
 def DownloadUrl(url, corpus, max_attempts=5, timeout=5):
   """Downloads a URL.
-
   Args:
     url: The URL.
     corpus: The corpus of the URL.
     max_attempts: Max attempts for downloading the URL.
     timeout: Connection timeout in seconds for each attempt.
-
   Returns:
     The HTML at the URL or None if the request failed.
   """
@@ -249,11 +234,9 @@ def DownloadUrl(url, corpus, max_attempts=5, timeout=5):
 
 def ParseHtml(story, corpus):
   """Parses the HTML of a news story.
-
   Args:
     story: The raw Story to be parsed.
     corpus: Either 'cnn' or 'dailymail'.
-
   Returns:
     A Story containing URL, paragraphs and highlights.
   """
@@ -311,6 +294,10 @@ def ParseHtml(story, corpus):
           '//div[contains(@class, "article-text")]//p[%s]' % dm_exclude
       ]
   }
+  
+  title_selectors = [
+          '//title'
+      ]
 
   # Highlight exclusions.
   he = (
@@ -326,13 +313,13 @@ def ParseHtml(story, corpus):
           '//h1/following-sibling::ul//li'
       ]
   }
+  
+  title_exclusions = [ '- CNN.com', '| Mail Online', '| Daily Mail Online' ]
 
   def ExtractText(selector):
     """Extracts a list of paragraphs given a XPath selector.
-
     Args:
       selector: A XPath selector to find the paragraphs.
-
     Returns:
       A list of raw text paragraphs with leading and trailing whitespace.
     """
@@ -356,15 +343,20 @@ def ParseHtml(story, corpus):
 
   paragraphs = ExtractText(paragraph_selectors[corpus])
   highlights = ExtractText(highlight_selectors[corpus])
+  titles = ExtractText(title_selectors)
+  
+  title = titles[0] if len(titles) > 0 else ''
+  for title_exclusion in title_exclusions:
+    title = title.replace(title_exclusion, '')
+  title = title.strip()
 
   content = '\n\n'.join(paragraphs)
 
-  return Story(story.url, content, highlights)
+  return Story(story.url, content, highlights, title)
 
 
 def WriteStory(story, corpus):
   """Writes a news story to disk.
-
   Args:
     story: The news story to write.
     corpus: The corpus the news story belongs to.
@@ -379,10 +371,8 @@ def WriteStory(story, corpus):
 
 def LoadTokenMapping(filename):
   """Loads a token mapping from the given filename.
-
   Args:
     filename: The filename containing the token mapping.
-
   Returns:
     A list of (start, end) where start and
     end (inclusive) are offsets into the content for a token. The list is
@@ -409,11 +399,9 @@ def LoadTokenMapping(filename):
 
 def Tokenize(story, corpus):
   """Tokenizes a news story.
-
   Args:
     story: The Story.
     corpus: The corpus of the news story.
-
   Returns:
     A TokenizedStory containing the URL and the tokens or None if no token
     mapping was found for the URL.
@@ -438,10 +426,8 @@ def Tokenize(story, corpus):
 
 def LoadEntityMapping(filename):
   """Loads an entity mapping from the given filename.
-
   Args:
     filename: The filename containing the entity mapping.
-
   Returns:
     A list of (entity_index, start, end)
     where start and end (inclusive) are token offsets for an entity. The list
@@ -468,11 +454,9 @@ def LoadEntityMapping(filename):
 
 def Anonymize(tokenized_story, corpus):
   """Anonymizes a tokenized news story.
-
   Args:
     tokenized_story: A TokenizedStory.
     corpus: The corpus of the tokenized news story.
-
   Returns:
     A Story containing the URL, anonymized content and anonymized highlights or
     None if no entity mapping exists for the news story.
@@ -520,15 +504,12 @@ entity_pattern = re.compile(r'@entity\d+')
 
 def GenerateQuestionContexts(anonymized_story, context_token_limit):
   """Generates a list of question/answer pairs given an anonymized news story.
-
   One question/answer pair is generated for each anonymized entity appearing in
   the question.
-
   Args:
     anonymized_story: The anonymized news story.
     context_token_limit: If the context of a news story is above the limit, the
         empty list will be returned.
-
   Returns:
     A list of QuestionContext containing questions and answers.
   """
@@ -564,7 +545,6 @@ def GenerateQuestionContexts(anonymized_story, context_token_limit):
 
 def WriteQuestionContext(question_context, corpus, dataset):
   """Writes a question/answer pair to disk.
-
   Args:
     question_context: The QuestionContext to write containing the question and
         answer.
@@ -581,7 +561,6 @@ def WriteQuestionContext(question_context, corpus, dataset):
 
 class ProgressBar(object):
   """Simple progress bar.
-
   Output example:
     100.00% [2152/2152]
   """
@@ -613,7 +592,6 @@ datasets = ['training', 'validation', 'test']
 
 def UrlMode(corpus, request_parallelism):
   """Finds Wayback Machine URLs and writes them to disk.
-
   Args:
     corpus: A corpus.
     request_parallelism: The number of concurrent requests.
@@ -642,13 +620,10 @@ def UrlMode(corpus, request_parallelism):
 
 def DownloadMapper(t):
   """Downloads an URL and checks that metadata is available for the URL.
-
   Args:
     t: a tuple (url, corpus).
-
   Returns:
     A pair of URL and content.
-
   Raises:
     RuntimeError: No metadata available.
   """
@@ -666,7 +641,6 @@ def DownloadMapper(t):
 
 def DownloadMode(corpus, request_parallelism):
   """Downloads the URLs for the specified corpus.
-
   Args:
     corpus: A corpus.
     request_parallelism: The number of concurrent download requests.
@@ -711,10 +685,8 @@ def DownloadMode(corpus, request_parallelism):
 
 def StoreMapper(t):
   """Reads an URL from disk and returns the parsed news story.
-
   Args:
     t: a tuple (url, corpus).
-
   Returns:
     A Story containing the parsed news story.
   """
@@ -750,10 +722,8 @@ def StoreMode(corpus):
 
 def GenerateMapper(t):
   """Reads an URL from disk and returns a list of question/answer pairs.
-
   Args:
     t: a tuple (url, corpus).
-
   Returns:
     A list of QuestionContext containing a question and an answer.
   """
